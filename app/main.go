@@ -31,8 +31,8 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		message_size_bytes := Int32ToBytes(message_size, binary.LittleEndian)
-		correlational_id_bytes := Int32ToBytes(correlational_id, binary.LittleEndian)
+		message_size_bytes := Int32ToBytes(message_size, binary.BigEndian)
+		correlational_id_bytes := Int32ToBytes(correlational_id, binary.BigEndian)
 
 		conn.Write(message_size_bytes)
 		conn.Write(correlational_id_bytes)
