@@ -14,7 +14,7 @@ func main() {
 
 	// response  message size \ header \ body
 	// message size 32 bit signed integer
-	var message_size int32
+	var message_size int32 = 0
 	// header correlational id
 	var correlational_id int32 = 7
 
@@ -32,7 +32,7 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println( message_size )
-		fmt.Println( correlational_id)
+		fmt.Println( correlational_id )
 
 	}
 
