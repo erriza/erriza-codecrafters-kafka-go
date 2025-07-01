@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
@@ -11,7 +12,6 @@ var _ = net.Listen
 var _ = os.Exit
 
 func main() {
-
 	// response  message size \ header \ body
 	// message size 32 bit signed integer
 	var message_size int32 = 0
@@ -26,15 +26,21 @@ func main() {
 		os.Exit(1)
 	}
 	for {
-		_, err := l.Accept()
+		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		fmt.Println( message_size )
-		fmt.Println( correlational_id )
+		message_size_bytes := Int32ToBytes(message_size, binary.LittleEndian)
+		correlational_id_bytes := Int32ToBytes(correlational_id, binary.LittleEndian)
 
-	}
+		conn.Write(message_size_bytes)
+		conn.Write(correlational_id_bytes)
+	}	
+}
 
-	
+func Int32ToBytes(n int32, byteOrder binary.ByteOrder) []byte {
+	buf := make([]byte, 4)
+	byteOrder.PutUint32(buf, uint32(n))
+	return buf
 }
