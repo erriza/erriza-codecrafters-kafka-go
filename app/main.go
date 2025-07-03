@@ -75,6 +75,7 @@ func main() {
 			conn.Write(errorCodeBytes)
 
     	} else {
+			conn.Write(correlational_id_bytes) // Use the slice we read directly
 		}
 	}	
 }
