@@ -75,7 +75,13 @@ func main() {
 			conn.Write(errorCodeBytes)
 
     	} else {
+
+			errCode := make([]byte, 2)
+			binary.BigEndian.AppendUint16(errCode, 0)
+
+			conn.Write(message_size)
 			conn.Write(correlational_id_bytes) // Use the slice we read directly
+			conn.Write(errCode) // 
 		}
 	}	
 }
