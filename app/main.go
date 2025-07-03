@@ -48,14 +48,9 @@ func main() {
 		correlational_id_bytes, err := ReadBytes(conn, 4)
 		if err != nil { continue }
 
-		// message_size_bytes := Int32ToBytes(message_size, binary.BigEndian)
 		api_version := binary.BigEndian.Uint16(api_version_bytes)
 
 		correlational_id := binary.BigEndian.Uint32(correlational_id_bytes)
-
-		// request_api_key_bytes := Int32ToBytes(request_api_key, binary.BigEndian)
-		// correlational_id_bytes := Int32ToBytes(correlational_id, binary.BigEndian)
-
 
 		fmt.Println(request_api_key)
 		fmt.Println(correlational_id)
@@ -75,7 +70,7 @@ func main() {
 			conn.Write(errorCodeBytes)
 
     	} else {
-
+			//err 0
 			errCode := make([]byte, 2)
 			binary.BigEndian.AppendUint16(errCode, 0)
 
@@ -86,11 +81,7 @@ func main() {
 	}	
 }
 
-func Int32ToBytes(n int32, byteOrder binary.ByteOrder) []byte {
-	buf := make([]byte, 4)
-	byteOrder.PutUint32(buf, uint32(n))
-	return buf
-}
+
 
 func ReadBytes(conn net.Conn, bytesToRead int) ([]byte, error) {
 	//read first 8 bytes ignore them
@@ -103,19 +94,8 @@ func ReadBytes(conn net.Conn, bytesToRead int) ([]byte, error) {
 	return buff, nil
 }
 
-// func ReadApiVerson(conn net.Conn, offset int64) int32 {
-// 	buff := make([]byte, offset)
-
-// 	_, err := io.ReadFull(conn, buff) {
-// 		if err != nil {
-// 			fmt.Println("error reading skipping offset", err)
-// 			return 0
-// 		}
-// 	}
-
-// 	// read actual Api version
-
+// func Int32ToBytes(n int32, byteOrder binary.ByteOrder) []byte {
+// 	buf := make([]byte, 4)
+// 	byteOrder.PutUint32(buf, uint32(n))
+// 	return buf
 // }
-
-
-// 00 00 00 23  00 12  67 4a  4f 74 d2 8b  00096b61666b612d636c69000a6b61666b612d636c6904302e3100
