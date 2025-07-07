@@ -33,18 +33,26 @@ func main() {
 			os.Exit(1)
 		}
 		
-		//Read the header field sequentially. Each call to readBytes
+		go handleReq(conn)
+	}	
+}
+
+
+func handleReq(conn net.Conn) {
+	//Read the header field sequentially. Each call to readBytes
 		message_size, err := ReadBytes(conn, 4)
-		if err != nil { continue }
+		if err != nil { }
 
 		request_api_key, err := ReadBytes(conn, 2)
-		if err != nil { continue }
+		if err != nil { fmt.Println(err) }
 
 		api_version_bytes, err := ReadBytes(conn, 2)
-		if err != nil { continue }
+		if err != nil { fmt.Println(err) }
 
 		correlational_id_bytes, err := ReadBytes(conn, 4)
-		if err != nil { continue }
+		if err != nil {  
+			fmt.Println(err)
+		}
 
 		//convert to int the size of message
 		message_size_int := binary.BigEndian.Uint32(message_size)
@@ -57,7 +65,7 @@ func main() {
 		if bytesLeftToRead > 0 {
 			_,err := ReadBytes(conn, bytesLeftToRead)
 			if err != nil {
-				continue
+				fmt.Println(err)
 			}
 		}
 
@@ -121,10 +129,7 @@ func main() {
             conn.Write(correlational_id_bytes)
             conn.Write(responseBody)
 		}
-	}	
 }
-
-
 
 func ReadBytes(conn net.Conn, bytesToRead int) ([]byte, error) {
 	//read first 8 bytes ignore them
