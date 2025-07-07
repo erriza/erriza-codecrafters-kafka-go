@@ -81,57 +81,53 @@ func main() {
 			conn.Write(errorCodeBytes)
 
     	} else {
-			// 1. Build the response body piece by piece.
-			errorCodeBytes := make([]byte, 2)
+			errorCodeBytes := make([]byte, 2) // [0, 0]
 			binary.BigEndian.PutUint16(errorCodeBytes, 0)
-
-			throttleTimeBytes := make([]byte, 4)
+					
+			throttleTimeBytes := make([]byte, 4) // [0, 0, 0, 0]
 			binary.BigEndian.PutUint32(throttleTimeBytes, 0)
-			
-			// The ApiKeys array now contains one element.
-			// Length is N+1 = 1+1 = 2.
-			apiKeysLenBytes := []byte{2}
-
-			// Build the struct for the ApiVersions API itself.
-			apiKeyBytes := make([]byte, 2)
-			binary.BigEndian.PutUint16(apiKeyBytes, 18)
-
-			minVersionBytes := make([]byte, 2)
-			binary.BigEndian.PutUint16(minVersionBytes, 0)
-
-			maxVersionBytes := make([]byte, 2)
-			binary.BigEndian.PutUint16(maxVersionBytes, 4)
-			
-			// Each struct in the array also has a tag buffer.
-			apiStructTaggedFieldsBytes := []byte{0}
-
-			// The top-level response ends with a TaggedFields section.
-			responseTaggedFieldsBytes := []byte{0}
-			
-			// 2. Combine all body parts in the CORRECT order.
-            // The official spec is: error_code, throttle_time, api_keys, tagged_fields
-			
-            var responseBody []byte
-            responseBody = append(responseBody, errorCodeBytes...)
-            responseBody = append(responseBody, throttleTimeBytes...) // throttle_time comes BEFORE the array
-
-            // Now append the array itself
-            responseBody = append(responseBody, apiKeysLenBytes...) // The array length
-            // ... followed by the array elements
-			responseBody = append(responseBody, apiKeyBytes...)
-			responseBody = append(responseBody, minVersionBytes...)
-			responseBody = append(responseBody, maxVersionBytes...)
-			responseBody = append(responseBody, apiStructTaggedFieldsBytes...)
-
-            // And finally, the top-level tagged fields
-			responseBody = append(responseBody, responseTaggedFieldsBytes...)
-
-			// 3. Calculate the total message size. This logic is already correct.
+					
+			// 2. Build the ApiKeys array.
+			// It contains one element, so its length is N+1 = 2.
+			apiKeysArrayLength := []byte{2}
+					
+			// Build the single element for the array (the ApiVersions API struct)
+			apiKey := make([]byte, 2) // [0, 18]
+			binary.BigEndian.PutUint16(apiKey, 18)
+					
+			minVersion := make([]byte, 2) // [0, 0]
+			binary.BigEndian.PutUint16(minVersion, 0)
+					
+			maxVersion := make([]byte, 2) // [0, 4]
+			binary.BigEndian.PutUint16(maxVersion, 4)
+					
+			// The struct itself has a tagged fields section at the end. It's empty (length 0).
+			structTaggedFields := []byte{0} // [0]
+					
+			// 3. The entire response message has a tagged fields section at the very end. It's also empty.
+			responseTaggedFields := []byte{0} // [0]
+					
+			// 4. Combine everything in the correct order.
+			var responseBody []byte
+			responseBody = append(responseBody, errorCodeBytes...)       // 2 bytes
+			responseBody = append(responseBody, throttleTimeBytes...)    // 4 bytes
+			responseBody = append(responseBody, apiKeysArrayLength...)   // 1 byte
+			// -- Start of array data --
+			responseBody = append(responseBody, apiKey...)               // 2 bytes
+			responseBody = append(responseBody, minVersion...)           // 2 bytes
+			responseBody = append(responseBody, maxVersion...)           // 2 bytes
+			responseBody = append(responseBody, structTaggedFields...)   // 1 byte
+			// -- End of array data --
+			responseBody = append(responseBody, responseTaggedFields...) // 1 byte
+			// TOTAL BODY SIZE = 2+4+1+2+2+2+1+1 = 15 bytes
+					
+			// 5. Calculate the total message size.
+			// correlation_id (4) + responseBody (15) = 19
 			totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
 			responseSizeBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
-
-			// 4. Write the full response to the client. This part is already correct.
+					
+			// 6. Write the response.
 			conn.Write(responseSizeBytes)
 			conn.Write(correlational_id_bytes)
 			conn.Write(responseBody)
