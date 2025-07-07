@@ -80,44 +80,46 @@ func main() {
 			conn.Write(errorCodeBytes)
 
     	} else {
-			errorCodeBytes := make([]byte, 2)
-			binary.BigEndian.PutUint16(errorCodeBytes, 0)
-
-			// ApiKeys is a COMPACT_ARRAY. Length is (N+1) as a VARINT.
-			// To declare an array of N=1 element, the length is 2.
-			apiKeysArrayLength := []byte{2} // [2]
-			apiKeyEntry := make([]byte, 6)
-			binary.BigEndian.PutUint16(apiKeyEntry[0:2], 18)
-			binary.BigEndian.PutUint16(apiKeyEntry[2:4], 0)
-			binary.BigEndian.PutUint16(apiKeyEntry[4:6], 4)
-
-			// The entire response message has a tagged fields section at the very end.
-			// An empty one has a length of 0.
-			responseTaggedFields := []byte{0} // [0]
-			
-			throttleTimeBytes := make([]byte, 4) // [0, 0, 0, 0]
-			binary.BigEndian.PutUint32(throttleTimeBytes, 0)
-
-			// 2. Combine the body parts. We DO NOT include the 7-byte struct.
-			// Total body size = error(2) + throttle(4) + array_len(1) + tagged_fields(1) = 8 bytes.
-			var responseBody []byte
-			responseBody = append(responseBody, errorCodeBytes...)
-			responseBody = append(responseBody, apiKeysArrayLength...)
-			responseBody = append(responseBody, apiKeysArrayLength...)
-			responseBody = append(responseBody, throttleTimeBytes...)
-			responseBody = append(responseBody, responseTaggedFields...)
-
-			// 3. Calculate total message size.
-			// correlation_id (4) + responseBody (8) = 12
-			totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
-			responseSizeBytes := make([]byte, 4)
-			binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
-
-			// 4. Write the response.
-			conn.Write(responseSizeBytes)
-			conn.Write(correlational_id_bytes)
-			conn.Write(responseBody)
-			conn.Write(apiStruct_ApiKey)
+            errorCodeBytes := make([]byte, 2) // [0, 0]
+            binary.BigEndian.PutUint16(errorCodeBytes, 0)
+            
+            // ApiKeys is a COMPACT_ARRAY. Length is (N+1) as a VARINT.
+            // To declare an array of N=1 element, the length is 2.
+            apiKeysArrayLength := []byte{2} // [2] - means 1 element
+            
+            // API Key entry: api_key (18) + min_version (0) + max_version (4)
+            apiKeyEntry := make([]byte, 6) // 2 + 2 + 2 = 6 bytes
+            binary.BigEndian.PutUint16(apiKeyEntry[0:2], 18) // api_key = 18 (APIVersions)
+            binary.BigEndian.PutUint16(apiKeyEntry[2:4], 0)  // min_version = 0
+            binary.BigEndian.PutUint16(apiKeyEntry[4:6], 4)  // max_version = 4
+            
+            // Tagged fields for the API key entry (empty)
+            apiKeyTaggedFields := []byte{0} // [0]
+            
+            throttleTimeBytes := make([]byte, 4) // [0, 0, 0, 0]
+            binary.BigEndian.PutUint32(throttleTimeBytes, 0)
+            
+            // Tagged fields for the response (empty)
+            responseTaggedFields := []byte{0} // [0]
+            
+            // Build the complete response body
+            var responseBody []byte
+            responseBody = append(responseBody, errorCodeBytes...)        // error_code (2 bytes)
+            responseBody = append(responseBody, apiKeysArrayLength...)    // num_of_api_keys (1 byte)
+            responseBody = append(responseBody, apiKeyEntry...)           // api_key entry (6 bytes)
+            responseBody = append(responseBody, apiKeyTaggedFields...)    // api_key tagged fields (1 byte)
+            responseBody = append(responseBody, throttleTimeBytes...)     // throttle_time_ms (4 bytes)
+            responseBody = append(responseBody, responseTaggedFields...)  // response tagged fields (1 byte)
+            
+            // Calculate total message size: correlation_id (4) + responseBody
+            totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
+            responseSizeBytes := make([]byte, 4)
+            binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
+            
+            // Write the complete response
+            conn.Write(responseSizeBytes)
+            conn.Write(correlational_id_bytes)
+            conn.Write(responseBody)
 		}
 	}	
 }
