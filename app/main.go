@@ -81,14 +81,18 @@ func main() {
 			conn.Write(errorCodeBytes)
 
     	} else {
+			// 1. Build the response body piece by piece.
 			errorCodeBytes := make([]byte, 2)
 			binary.BigEndian.PutUint16(errorCodeBytes, 0)
 
-			// throttle_time_ms (INT32) = 0
 			throttleTimeBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(throttleTimeBytes, 0)
 			
+			// The ApiKeys array now contains one element.
+			// Length is N+1 = 1+1 = 2.
 			apiKeysLenBytes := []byte{2}
+
+			// Build the struct for the ApiVersions API itself.
 			apiKeyBytes := make([]byte, 2)
 			binary.BigEndian.PutUint16(apiKeyBytes, 18)
 
@@ -98,22 +102,29 @@ func main() {
 			maxVersionBytes := make([]byte, 2)
 			binary.BigEndian.PutUint16(maxVersionBytes, 4)
 			
+			// Each struct in the array also has a tag buffer.
 			apiStructTaggedFieldsBytes := []byte{0}
 
-			// Combine the pieces of the struct
-			apiStructBytes := append(apiKeyBytes, minVersionBytes...)
-			apiStructBytes = append(apiStructBytes, maxVersionBytes...)
-			apiStructBytes = append(apiStructBytes, apiStructTaggedFieldsBytes...)
-			// --- END OF API STRUCT ---
-			
-			// The top-level response also ends with a TaggedFields section (which is empty).
+			// The top-level response ends with a TaggedFields section.
 			responseTaggedFieldsBytes := []byte{0}
 			
-			// 2. Combine all body parts into a single byte slice.
-			responseBody := append(errorCodeBytes, throttleTimeBytes...)
-			responseBody = append(responseBody, apiKeysLenBytes...) // The array length
-			responseBody = append(responseBody, apiStructBytes...)  // The actual array element
-			responseBody = append(responseBody, responseTaggedFieldsBytes...) // The final tagged fields
+			// 2. Combine all body parts in the CORRECT order.
+            // The official spec is: error_code, throttle_time, api_keys, tagged_fields
+			
+            var responseBody []byte
+            responseBody = append(responseBody, errorCodeBytes...)
+            responseBody = append(responseBody, throttleTimeBytes...) // throttle_time comes BEFORE the array
+
+            // Now append the array itself
+            responseBody = append(responseBody, apiKeysLenBytes...) // The array length
+            // ... followed by the array elements
+			responseBody = append(responseBody, apiKeyBytes...)
+			responseBody = append(responseBody, minVersionBytes...)
+			responseBody = append(responseBody, maxVersionBytes...)
+			responseBody = append(responseBody, apiStructTaggedFieldsBytes...)
+
+            // And finally, the top-level tagged fields
+			responseBody = append(responseBody, responseTaggedFieldsBytes...)
 
 			// 3. Calculate the total message size. This logic is already correct.
 			totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
