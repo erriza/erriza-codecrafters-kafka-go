@@ -33,9 +33,7 @@ func main() {
 			os.Exit(1)
 		}
 		
-
 		//Read the header field sequentially. Each call to readBytes
-
 		message_size, err := ReadBytes(conn, 4)
 		if err != nil { continue }
 
@@ -48,9 +46,25 @@ func main() {
 		correlational_id_bytes, err := ReadBytes(conn, 4)
 		if err != nil { continue }
 
+		//convert to in the size of message
+		message_size_int := binary.BigEndian.Uint32(message_size)
+
+		bytesRead := len(request_api_key) + len(api_version_bytes) + len(correlational_id_bytes)
+
+		bytesLeftToRead := int(message_size_int) - bytesRead
+
+
+		if bytesLeftToRead > 0 {
+			_,err := ReadBytes(conn, bytesLeftToRead)
+			if err != nil {
+				continue
+			}
+		}
+
 		api_version := binary.BigEndian.Uint16(api_version_bytes)
 
 		correlational_id := binary.BigEndian.Uint32(correlational_id_bytes)
+
 
 		fmt.Println(request_api_key)
 		fmt.Println(correlational_id)
@@ -64,7 +78,6 @@ func main() {
 			errorCodeBytes := make([]byte, 2)
 			binary.BigEndian.PutUint16(errorCodeBytes, 35) // Error code for UNSUPPORTED_VERSION
 
-			// Write the response: message_size + correlation_id + error_code
 			conn.Write(message_size)
 			conn.Write(correlational_id_bytes) // Use the slice we read directly
 			conn.Write(errorCodeBytes)
@@ -74,7 +87,7 @@ func main() {
 			errCode := make([]byte, 2)
 			binary.BigEndian.AppendUint16(errCode, 0)
 
-			conn.Write(message_size)
+			conn.Write(request_api_key)
 			conn.Write(correlational_id_bytes) // Use the slice we read directly
 			conn.Write(errCode) // 
 		}
