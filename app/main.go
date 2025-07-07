@@ -92,9 +92,12 @@ func main() {
 			// An empty compact array is represented by a length of 1 (0 elements + 1).
 			apiKeysLenBytes := []byte{1}
 			
+			taggedFieldsLenBytes := []byte{0}
+
 			// 2. Combine all body parts into a single byte slice.
 			responseBody := append(errorCodeBytes, throttleTimeBytes...)
 			responseBody = append(responseBody, apiKeysLenBytes...)
+			responseBody = append(responseBody, taggedFieldsLenBytes...)
 
 			// 3. Calculate the total message size.
 			// Size = length of correlation_id + length of the new response body.
