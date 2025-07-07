@@ -69,7 +69,6 @@ func main() {
 		fmt.Println(correlational_id)
 
 	    if api_version > 4 {
-			// Prepare the error response
 			responseSizeBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(responseSizeBytes, 6) // Size of correlation_id (4) + error_code (2) = 6
 
@@ -77,56 +76,40 @@ func main() {
 			binary.BigEndian.PutUint16(errorCodeBytes, 35) // Error code for UNSUPPORTED_VERSION
 
 			conn.Write(responseSizeBytes)
-			conn.Write(correlational_id_bytes) // Use the slice we read directly
+			conn.Write(correlational_id_bytes)
 			conn.Write(errorCodeBytes)
 
     	} else {
-			errorCodeBytes := make([]byte, 2)
+			errorCodeBytes := make([]byte, 2) // [0, 0]
 			binary.BigEndian.PutUint16(errorCodeBytes, 0)
 
-			throttleTimeBytes := make([]byte, 4)
+			throttleTimeBytes := make([]byte, 4) // [0, 0, 0, 0]
 			binary.BigEndian.PutUint32(throttleTimeBytes, 0)
 
-			// 2. Build the ApiKeys array. It contains one element.
-			// The length for a COMPACT_ARRAY is (N+1) as a VARINT. For N=1, length is 2.
-			apiKeysArrayLength := []byte{2}
+			// ApiKeys is a COMPACT_ARRAY. Length is (N+1) as a VARINT.
+			// To declare an array of N=1 element, the length is 2.
+			apiKeysArrayLength := []byte{2} // [2]
 
-			// 3. Build the single element for the array (the ApiVersions API struct).
-			apiStruct_ApiKey := make([]byte, 2)
-			binary.BigEndian.PutUint16(apiStruct_ApiKey, 18)
+			// The entire response message has a tagged fields section at the very end.
+			// An empty one has a length of 0.
+			responseTaggedFields := []byte{0} // [0]
 
-			apiStruct_MinVersion := make([]byte, 2)
-			binary.BigEndian.PutUint16(apiStruct_MinVersion, 0)
-
-			apiStruct_MaxVersion := make([]byte, 2)
-			binary.BigEndian.PutUint16(apiStruct_MaxVersion, 4)
-
-			// The struct itself has a tagged fields section at the end. It's empty (length 0).
-			apiStruct_TaggedFields := []byte{0}
-
-			// 4. The entire response message has a tagged fields section at the very end. It's also empty.
-			response_TaggedFields := []byte{0}
-
-			// 5. Combine everything in the correct order.
+			// 2. Combine the body parts. We DO NOT include the 7-byte struct.
+			// Total body size = error(2) + throttle(4) + array_len(1) + tagged_fields(1) = 8 bytes.
 			var responseBody []byte
 			responseBody = append(responseBody, errorCodeBytes...)
 			responseBody = append(responseBody, throttleTimeBytes...)
-			// Append the array
 			responseBody = append(responseBody, apiKeysArrayLength...)
-			// Append the single struct within the array
-			responseBody = append(responseBody, apiStruct_ApiKey...)
-			responseBody = append(responseBody, apiStruct_MinVersion...)
-			responseBody = append(responseBody, apiStruct_MaxVersion...)
-			responseBody = append(responseBody, apiStruct_TaggedFields...)
-			// Append the final tagged fields for the whole response
-			responseBody = append(responseBody, response_TaggedFields...)
+			// DO NOT APPEND THE STRUCT DATA HERE
+			responseBody = append(responseBody, responseTaggedFields...)
 
-			// 6. Calculate total message size: correlation_id (4) + responseBody (15) = 19
+			// 3. Calculate total message size.
+			// correlation_id (4) + responseBody (8) = 12
 			totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
 			responseSizeBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
 
-			// 7. Write the response.
+			// 4. Write the response.
 			conn.Write(responseSizeBytes)
 			conn.Write(correlational_id_bytes)
 			conn.Write(responseBody)
