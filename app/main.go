@@ -88,24 +88,39 @@ func main() {
 			throttleTimeBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(throttleTimeBytes, 0)
 			
-			// api_keys (COMPACT_ARRAY) = Empty array
-			// An empty compact array is represented by a length of 1 (0 elements + 1).
-			apiKeysLenBytes := []byte{1}
-			
-			taggedFieldsLenBytes := []byte{0}
+			apiKeysLenBytes := []byte{2}
+			apiKeyBytes := make([]byte, 2)
+			binary.BigEndian.PutUint16(apiKeyBytes, 18)
 
+			minVersionBytes := make([]byte, 2)
+			binary.BigEndian.PutUint16(minVersionBytes, 0)
+
+			maxVersionBytes := make([]byte, 2)
+			binary.BigEndian.PutUint16(maxVersionBytes, 4)
+			
+			apiStructTaggedFieldsBytes := []byte{0}
+
+			// Combine the pieces of the struct
+			apiStructBytes := append(apiKeyBytes, minVersionBytes...)
+			apiStructBytes = append(apiStructBytes, maxVersionBytes...)
+			apiStructBytes = append(apiStructBytes, apiStructTaggedFieldsBytes...)
+			// --- END OF API STRUCT ---
+			
+			// The top-level response also ends with a TaggedFields section (which is empty).
+			responseTaggedFieldsBytes := []byte{0}
+			
 			// 2. Combine all body parts into a single byte slice.
 			responseBody := append(errorCodeBytes, throttleTimeBytes...)
-			responseBody = append(responseBody, apiKeysLenBytes...)
-			responseBody = append(responseBody, taggedFieldsLenBytes...)
+			responseBody = append(responseBody, apiKeysLenBytes...) // The array length
+			responseBody = append(responseBody, apiStructBytes...)  // The actual array element
+			responseBody = append(responseBody, responseTaggedFieldsBytes...) // The final tagged fields
 
-			// 3. Calculate the total message size.
-			// Size = length of correlation_id + length of the new response body.
+			// 3. Calculate the total message size. This logic is already correct.
 			totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
 			responseSizeBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
 
-			// 4. Write the full response to the client.
+			// 4. Write the full response to the client. This part is already correct.
 			conn.Write(responseSizeBytes)
 			conn.Write(correlational_id_bytes)
 			conn.Write(responseBody)
