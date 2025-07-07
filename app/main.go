@@ -72,22 +72,25 @@ func main() {
 
 	    if api_version > 4 {
 			// Prepare the error response
-			messageSizeBytes := make([]byte, 4)
-			binary.BigEndian.PutUint32(messageSizeBytes, 6) // Size of correlation_id (4) + error_code (2) = 6
+			responseSizeBytes := make([]byte, 4)
+			binary.BigEndian.PutUint32(responseSizeBytes, 6) // Size of correlation_id (4) + error_code (2) = 6
 
 			errorCodeBytes := make([]byte, 2)
 			binary.BigEndian.PutUint16(errorCodeBytes, 35) // Error code for UNSUPPORTED_VERSION
 
-			conn.Write(message_size)
+			conn.Write(responseSizeBytes)
 			conn.Write(correlational_id_bytes) // Use the slice we read directly
 			conn.Write(errorCodeBytes)
 
     	} else {
+			responseSizeBytes := make([]byte, 4)
+			binary.BigEndian.PutUint32(responseSizeBytes, 6)
+
 			//err 0
 			errCode := make([]byte, 2)
 			binary.BigEndian.AppendUint16(errCode, 0)
 
-			conn.Write(request_api_key)
+			conn.Write(responseSizeBytes)
 			conn.Write(correlational_id_bytes) // Use the slice we read directly
 			conn.Write(errCode) // 
 		}
