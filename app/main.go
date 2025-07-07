@@ -46,7 +46,7 @@ func main() {
 		correlational_id_bytes, err := ReadBytes(conn, 4)
 		if err != nil { continue }
 
-		//convert to in the size of message
+		//convert to int the size of message
 		message_size_int := binary.BigEndian.Uint32(message_size)
 
 		bytesRead := len(request_api_key) + len(api_version_bytes) + len(correlational_id_bytes)
@@ -65,10 +65,8 @@ func main() {
 
 		correlational_id := binary.BigEndian.Uint32(correlational_id_bytes)
 
-
 		fmt.Println(request_api_key)
 		fmt.Println(correlational_id)
-
 
 	    if api_version > 4 {
 			// Prepare the error response
@@ -83,16 +81,31 @@ func main() {
 			conn.Write(errorCodeBytes)
 
     	} else {
+			errorCodeBytes := make([]byte, 2)
+			binary.BigEndian.PutUint16(errorCodeBytes, 0)
+
+			// throttle_time_ms (INT32) = 0
+			throttleTimeBytes := make([]byte, 4)
+			binary.BigEndian.PutUint32(throttleTimeBytes, 0)
+			
+			// api_keys (COMPACT_ARRAY) = Empty array
+			// An empty compact array is represented by a length of 1 (0 elements + 1).
+			apiKeysLenBytes := []byte{1}
+			
+			// 2. Combine all body parts into a single byte slice.
+			responseBody := append(errorCodeBytes, throttleTimeBytes...)
+			responseBody = append(responseBody, apiKeysLenBytes...)
+
+			// 3. Calculate the total message size.
+			// Size = length of correlation_id + length of the new response body.
+			totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
 			responseSizeBytes := make([]byte, 4)
-			binary.BigEndian.PutUint32(responseSizeBytes, 6)
+			binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
 
-			//err 0
-			errCode := make([]byte, 2)
-			binary.BigEndian.AppendUint16(errCode, 0)
-
+			// 4. Write the full response to the client.
 			conn.Write(responseSizeBytes)
-			conn.Write(correlational_id_bytes) // Use the slice we read directly
-			conn.Write(errCode) // 
+			conn.Write(correlational_id_bytes)
+			conn.Write(responseBody)
 		}
 	}	
 }
