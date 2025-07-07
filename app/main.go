@@ -33,12 +33,23 @@ func main() {
 			os.Exit(1)
 		}
 		
-		go handleReq(conn)
+		go handleConnection(conn)
 	}	
 }
 
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	
+	for {
+		err := handleReq(conn)
+		if err != nil {
+			fmt.Println("Error handling request", err)
+			break
+		}
+	}
+}
 
-func handleReq(conn net.Conn) {
+func handleReq(conn net.Conn) error {
 	//Read the header field sequentially. Each call to readBytes
 		message_size, err := ReadBytes(conn, 4)
 		if err != nil { }
@@ -129,6 +140,7 @@ func handleReq(conn net.Conn) {
             conn.Write(correlational_id_bytes)
             conn.Write(responseBody)
 		}
+		return nil
 }
 
 func ReadBytes(conn net.Conn, bytesToRead int) ([]byte, error) {
