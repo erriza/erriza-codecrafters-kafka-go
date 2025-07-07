@@ -89,6 +89,8 @@ func main() {
 			// ApiKeys is a COMPACT_ARRAY. Length is (N+1) as a VARINT.
 			// To declare an array of N=1 element, the length is 2.
 			apiKeysArrayLength := []byte{2} // [2]
+			apiStruct_ApiKey := make([]byte, 2)
+			binary.BigEndian.PutUint16(apiStruct_ApiKey, 18)
 
 			// The entire response message has a tagged fields section at the very end.
 			// An empty one has a length of 0.
@@ -113,6 +115,7 @@ func main() {
 			conn.Write(responseSizeBytes)
 			conn.Write(correlational_id_bytes)
 			conn.Write(responseBody)
+			conn.Write(apiStruct_ApiKey)
 		}
 	}	
 }
