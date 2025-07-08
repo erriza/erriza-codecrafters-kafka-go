@@ -52,7 +52,7 @@ func handleConnection(conn net.Conn) {
 func handleReq(conn net.Conn) error {
 	//Read the header field sequentially. Each call to readBytes
 		message_size, err := ReadBytes(conn, 4)
-		if err != nil { }
+		if err != nil { fmt.Println(err) }
 
 		request_api_key, err := ReadBytes(conn, 2)
 		if err != nil { fmt.Println(err) }
@@ -104,16 +104,24 @@ func handleReq(conn net.Conn) error {
             
             // ApiKeys is a COMPACT_ARRAY. Length is (N+1) as a VARINT.
             // To declare an array of N=1 element, the length is 2.
-            apiKeysArrayLength := []byte{2} // [2] - means 1 element
+            apiKeysArrayLength := []byte{3} // [2] - means 1 element
             
             // API Key entry: api_key (18) + min_version (0) + max_version (4)
             apiKeyEntry := make([]byte, 6) // 2 + 2 + 2 = 6 bytes
             binary.BigEndian.PutUint16(apiKeyEntry[0:2], 18) // api_key = 18 (APIVersions)
             binary.BigEndian.PutUint16(apiKeyEntry[2:4], 0)  // min_version = 0
             binary.BigEndian.PutUint16(apiKeyEntry[4:6], 4)  // max_version = 4
-            
             // Tagged fields for the API key entry (empty)
             apiKeyTaggedFields := []byte{0} // [0]
+            
+			//API KEY DESCRIBE TOPIC PARTITIONL: api_key (75) + min_version(0) + max_version(0)
+			apiKeyEntry75 := make([]byte, 6)
+			binary.BigEndian.PutUint16(apiKeyEntry75[0:2], 75)
+			binary.BigEndian.PutUint16(apiKeyEntry75[2:4], 0)
+			binary.BigEndian.PutUint16(apiKeyEntry75[4:6], 0)
+
+			// Tagged fields for the API key entry75
+			apiKeyTaggedFields75 := []byte{0}
             
             throttleTimeBytes := make([]byte, 4) // [0, 0, 0, 0]
             binary.BigEndian.PutUint32(throttleTimeBytes, 0)
@@ -127,6 +135,9 @@ func handleReq(conn net.Conn) error {
             responseBody = append(responseBody, apiKeysArrayLength...)    // num_of_api_keys (1 byte)
             responseBody = append(responseBody, apiKeyEntry...)           // api_key entry (6 bytes)
             responseBody = append(responseBody, apiKeyTaggedFields...)    // api_key tagged fields (1 byte)
+			responseBody = append(responseBody, apiKeyEntry75...)
+			responseBody = append(responseBody, apiKeyTaggedFields75...)
+
             responseBody = append(responseBody, throttleTimeBytes...)     // throttle_time_ms (4 bytes)
             responseBody = append(responseBody, responseTaggedFields...)  // response tagged fields (1 byte)
             
@@ -153,9 +164,3 @@ func ReadBytes(conn net.Conn, bytesToRead int) ([]byte, error) {
 	}
 	return buff, nil
 }
-
-// func Int32ToBytes(n int32, byteOrder binary.ByteOrder) []byte {
-// 	buf := make([]byte, 4)
-// 	byteOrder.PutUint32(buf, uint32(n))
-// 	return buf
-// }
