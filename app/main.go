@@ -67,9 +67,9 @@ func handleReq(conn net.Conn) error {
 
 		bytesLeftToRead := int(message_size_int) - bytesRead
 
-		var request_body []byte
+		var requestBody []byte
 		if bytesLeftToRead > 0 {
-			_,err := ReadBytes(conn, bytesLeftToRead)
+			requestBody, err = ReadBytes(conn, bytesLeftToRead)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -88,7 +88,7 @@ func handleReq(conn net.Conn) error {
 		case 18:
 			handleApiVersions(conn, api_version, correlational_id_bytes)
 		case 75:
-			handleDescribeTopicPartitions(conn, correlational_id_bytes, request_body)
+			handleDescribeTopicPartitions(conn, correlational_id_bytes, requestBody)
 		default:
 			fmt.Printf("Unsupported API Key: %d\n", api_key)
 		}
