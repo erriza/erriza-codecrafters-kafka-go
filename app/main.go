@@ -230,12 +230,18 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 }
 
 func parseDescribteTopicPartitionsRequest(requestBody []byte) string {
+	fmt.Printf("Request body length: %d\n", len(requestBody))
+	if len(requestBody) == 0 {
+		return ""
+	}
+	
 	offset := 0
 
-	// Skip client_id (nullable string)
+	// Skip client_id (compact string - nullable)
 	if len(requestBody) > offset {
-		clientIdLength := int(binary.BigEndian.Uint16(requestBody[offset:offset+2]))
-		offset+=2
+		clientIdLength := int(requestBody[offset]) - 1  // compact string length
+		offset += 1
+		fmt.Printf("Client ID length: %d\n", clientIdLength)
 		
 		if clientIdLength > 0 {
 			offset += clientIdLength
@@ -243,29 +249,41 @@ func parseDescribteTopicPartitionsRequest(requestBody []byte) string {
 	}
 
 	// skip max_response_bytes (4 bytes)
-	offset += 4
+	if len(requestBody) > offset+3 {
+		offset += 4
+		fmt.Printf("After max_response_bytes, offset: %d\n", offset)
+	}
 
-	// skip cursor (nullable)
+	// skip cursor (nullable - compact string)
 	if len(requestBody) > offset {
-		cursorLength := int(binary.BigEndian.Uint32(requestBody[offset:offset+4]))
-		offset+=4
+		cursorLength := int(requestBody[offset]) - 1  // compact string length
+		offset += 1
+		fmt.Printf("Cursor length: %d\n", cursorLength)
+		
 		if cursorLength > 0 {
 			offset += cursorLength
 		}
 	}
 
 	// Read topics array length (compact array)
-	topicsArrayLength := int(requestBody[offset]) - 1
-	offset += 1
-	
-	if topicsArrayLength > 0 {
-		// Read first topic name (compact string)
-		topicNameLength := int(requestBody[offset]) - 1
+	if len(requestBody) > offset {
+		topicsArrayLength := int(requestBody[offset]) - 1
 		offset += 1
+		fmt.Printf("Topics array length: %d\n", topicsArrayLength)
 		
-		if topicNameLength > 0 {
-			topicName := string(requestBody[offset:offset+topicNameLength])
-			return topicName
+		if topicsArrayLength > 0 {
+			// Read first topic name (compact string)
+			if len(requestBody) > offset {
+				topicNameLength := int(requestBody[offset]) - 1
+				offset += 1
+				fmt.Printf("Topic name length: %d\n", topicNameLength)
+				
+				if topicNameLength > 0 && len(requestBody) >= offset+topicNameLength {
+					topicName := string(requestBody[offset:offset+topicNameLength])
+					fmt.Printf("Topic name: %s\n", topicName)
+					return topicName
+				}
+			}
 		}
 	}
 	
