@@ -168,8 +168,10 @@ func handleApiVersions(conn net.Conn, api_version uint16, correlational_id_bytes
 func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte, request_body []byte) {
 	// Parse the v0 request body to get the topic name.
 	topicName := parseDescribreTopicPartitionsRequest(request_body)
+	fmt.Printf("Parsed topic name: '%s'\n", topicName)
+	fmt.Printf("Request body length: %d\n", len(request_body))
 
-	// Build the full, flexible response body.
+	// Build the DescribeTopicPartitions v0 response body.
 	var responseBody []byte
 
 	// 1. throttle_time_ms (INT32)
@@ -177,43 +179,44 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	binary.BigEndian.PutUint32(throttleTimeBytes, 0)
 	responseBody = append(responseBody, throttleTimeBytes...)
 
-	// 2. topics (COMPACT_ARRAY of Topic structs)
-	// Array has 1 element, so length is N+1=2.
-	topicsArrayLength := []byte{2}
+	// 2. topics (ARRAY of Topic structs) - v0 uses regular arrays, not compact
+	// Array has 1 element
+	topicsArrayLength := make([]byte, 4)
+	binary.BigEndian.PutUint32(topicsArrayLength, 1) // 1 topic
 	responseBody = append(responseBody, topicsArrayLength...)
 
 	// The Topic Struct:
+	// error_code (INT16)
 	errorCodeBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(errorCodeBytes, 3) // UNKNOWN_TOPIC_OR_PARTITION
 	responseBody = append(responseBody, errorCodeBytes...)
 
-	topicNameBytes := encodeCompactString(topicName)
+	// name (STRING) - v0 uses regular strings, not compact
+	topicNameBytes := encodeString(topicName)
 	responseBody = append(responseBody, topicNameBytes...)
 
+	// topic_id (UUID) - 16 bytes, all zeros for unknown topic
 	topicIdBytes := make([]byte, 16) // Null UUID
 	responseBody = append(responseBody, topicIdBytes...)
 
+	// is_internal (BOOLEAN)
 	responseBody = append(responseBody, byte(0)) // is_internal = false
 
-	partitionsArrayLength := []byte{1} // Empty partitions array
+	// partitions (ARRAY) - empty array for unknown topic
+	partitionsArrayLength := make([]byte, 4)
+	binary.BigEndian.PutUint32(partitionsArrayLength, 0) // 0 partitions
 	responseBody = append(responseBody, partitionsArrayLength...)
 
+	// topic_authorized_operations (INT32) - -1 for unknown
 	authorizedOpsBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(authorizedOpsBytes, 0) // No authorized operations
+	binary.BigEndian.PutUint32(authorizedOpsBytes, 0xFFFFFFFF) // -1 (unknown)
 	responseBody = append(responseBody, authorizedOpsBytes...)
+
+	// 3. next_cursor (nullable struct) - NULL for v0
+	responseBody = append(responseBody, byte(0xFF)) // -1 indicates NULL
+
+	fmt.Printf("Response body length: %d\n", len(responseBody))
 	
-	responseBody = append(responseBody, byte(0)) // Tagged fields for topic struct
-
-	// 3. next_cursor (struct)
-	responseBody = append(responseBody, byte(0)) // topic_name is a NULL compact string
-
-	partitionIndexBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(partitionIndexBytes, 0xFFFFFFFF) // partition_index = -1
-	responseBody = append(responseBody, partitionIndexBytes...)
-
-	// 4. tagged_fields (for the whole response)
-	responseBody = append(responseBody, byte(0))
-
 	// Calculate final size and send the complete response.
 	totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
 	responseSizeBytes := make([]byte, 4)
@@ -227,39 +230,32 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	offset := 0
 
-	// For DescribeTopicPartitions v0, the request body starts with:
-	// 1. topics (COMPACT_ARRAY of COMPACT_STRING)
-	// 2. response_partition_limit (INT32)
+	// For DescribeTopicPartitions v0, the request body format is:
+	// 1. topics (ARRAY of STRING) - 4 bytes length + strings
+	// 2. response_partition_limit (INT32) 
 	// 3. cursor (nullable)
-	// 4. tagged_fields
 
-	// First, read the topics array length (COMPACT_ARRAY)
-	if len(requestBody) < offset+1 {
+	// First, read the topics array length (regular ARRAY, not compact)
+	if len(requestBody) < offset+4 {
 		return ""
 	}
 	
-	// Read the varint length for the compact array
-	topicsArrayLength, bytesRead := binary.Uvarint(requestBody[offset:])
-	offset += bytesRead
+	// Read the array length (4 bytes, big endian)
+	topicsArrayLength := int(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
+	offset += 4
 	
-	// Length is N+1 for compact arrays, so actual length is topicsArrayLength-1
-	actualTopicsLength := int(topicsArrayLength - 1)
-	
-	if actualTopicsLength > 0 {
-		// Read the first topic name (COMPACT_STRING)
-		if len(requestBody) < offset+1 {
+	if topicsArrayLength > 0 {
+		// Read the first topic name (regular STRING, not compact)
+		if len(requestBody) < offset+2 {
 			return ""
 		}
 		
-		// Read the compact string length
-		topicNameLength, bytesRead := binary.Uvarint(requestBody[offset:])
-		offset += bytesRead
+		// Read the string length (2 bytes, big endian)
+		topicNameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
+		offset += 2
 		
-		// Length is N+1 for compact strings, so actual length is topicNameLength-1
-		actualTopicNameLength := int(topicNameLength - 1)
-		
-		if actualTopicNameLength > 0 && len(requestBody) >= offset+actualTopicNameLength {
-			topicName := string(requestBody[offset : offset+actualTopicNameLength])
+		if topicNameLength > 0 && len(requestBody) >= offset+topicNameLength {
+			topicName := string(requestBody[offset : offset+topicNameLength])
 			return topicName
 		}
 	}
@@ -267,6 +263,14 @@ func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	return ""
 }
 
+
+func encodeString(s string) []byte {
+	// Regular STRING format: 2-byte length + string data
+	result := make([]byte, 2+len(s))
+	binary.BigEndian.PutUint16(result[0:2], uint16(len(s)))
+	copy(result[2:], []byte(s))
+	return result
+}
 
 func encodeCompactString(s string) []byte {
 	if s == "" {
