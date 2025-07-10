@@ -234,53 +234,39 @@ func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	fmt.Printf("Request body hex: %x\n", requestBody)
 	fmt.Printf("Request body length: %d\n", len(requestBody))
 
-	// For DescribeTopicPartitions v0, the request body format is:
-	// 1. topics (COMPACT_ARRAY of COMPACT_STRING) - VARINT length + compact strings
-	// 2. response_partition_limit (INT32) 
-	// 3. cursor (nullable)
-
-	// First, read the topics array length (COMPACT_ARRAY uses VARINT)
-	if len(requestBody) < offset+1 {
-		fmt.Printf("Not enough bytes for array length\n")
+	// Skip any leading tag fields (0x00)
+	for offset < len(requestBody) && requestBody[offset] == 0x00 {
+		offset++
+	}
+	
+	if offset >= len(requestBody) {
+		fmt.Printf("No data after tag fields\n")
 		return ""
 	}
 	
-	// Read the array length using VARINT (for compact arrays, length is N+1)
-	topicsArrayLengthRaw, bytesRead := binary.Uvarint(requestBody[offset:])
+	// Try to read the topics array
+	// First, let's see if this is a COMPACT_STRING (topic name)
+	topicNameLengthRaw, bytesRead := binary.Uvarint(requestBody[offset:])
 	if bytesRead <= 0 {
-		fmt.Printf("Error reading VARINT for array length\n")
+		fmt.Printf("Error reading first VARINT\n")
 		return ""
 	}
-	topicsArrayLength := int(topicsArrayLengthRaw) - 1 // Subtract 1 for compact array
-	fmt.Printf("Topics array length: %d\n", topicsArrayLength)
+	
+	topicNameLength := int(topicNameLengthRaw) - 1 // Subtract 1 for compact string
+	fmt.Printf("First VARINT: %d, interpreted as topic name length: %d\n", topicNameLengthRaw, topicNameLength)
 	offset += bytesRead
 	
-	if topicsArrayLength > 0 {
-		// Read the first topic name (COMPACT_STRING)
-		if len(requestBody) < offset+1 {
-			fmt.Printf("Not enough bytes for string length\n")
-			return ""
-		}
-		
-		// Read the string length using VARINT (for compact strings, length is N+1)
-		topicNameLengthRaw, bytesRead := binary.Uvarint(requestBody[offset:])
-		if bytesRead <= 0 {
-			fmt.Printf("Error reading VARINT for string length\n")
-			return ""
-		}
-		topicNameLength := int(topicNameLengthRaw) - 1 // Subtract 1 for compact string
-		fmt.Printf("Topic name length: %d\n", topicNameLength)
-		offset += bytesRead
-		
-		if topicNameLength > 0 && len(requestBody) >= offset+topicNameLength {
-			topicName := string(requestBody[offset : offset+topicNameLength])
-			fmt.Printf("Topic name: '%s'\n", topicName)
-			return topicName
-		}
+	if topicNameLength > 0 && len(requestBody) >= offset+topicNameLength {
+		topicName := string(requestBody[offset : offset+topicNameLength])
+		fmt.Printf("Topic name: '%s'\n", topicName)
+		return topicName
 	}
-
+	
 	return ""
 }
+
+// Also update the response to ensure we return exactly 1 topic when we have a topic name
+// The issue might be that we're always returning 1 topic regardless of whether we found one
 
 
 func encodeString(s string) []byte {
