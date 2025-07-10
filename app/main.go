@@ -44,53 +44,54 @@ func handleConnection(conn net.Conn) {
 }
 
 func handleReq(conn net.Conn) error {
+	message_size, err := ReadBytes(conn, 4)
+	if err != nil {
+		return err // Return the error to stop the loop.
+	}
 
-	//Read the header field sequentially. Each call to readBytes
-		message_size, err := ReadBytes(conn, 4)
-		if err != nil { return err }
+	request_api_key, err := ReadBytes(conn, 2)
+	if err != nil {
+		return err
+	}
 
-		request_api_key, err := ReadBytes(conn, 2)
-		if err != nil { return err }
+	api_version_bytes, err := ReadBytes(conn, 2)
+	if err != nil {
+		return err
+	}
 
-		api_version_bytes, err := ReadBytes(conn, 2)
-		if err != nil { return err }
+	correlational_id_bytes, err := ReadBytes(conn, 4)
+	if err != nil {
+		return err
+	}
 
-		correlational_id_bytes, err := ReadBytes(conn, 4)
-		if err != nil {  
+	message_size_int := binary.BigEndian.Uint32(message_size)
+	bytesRead := len(request_api_key) + len(api_version_bytes) + len(correlational_id_bytes)
+	bytesLeftToRead := int(message_size_int) - bytesRead
+
+	var requestBody []byte
+	if bytesLeftToRead > 0 {
+		requestBody, err = ReadBytes(conn, bytesLeftToRead)
+		if err != nil {
 			return err
 		}
+	}
 
-		//convert to int the size of message
-		message_size_int := binary.BigEndian.Uint32(message_size)
-		bytesRead := len(request_api_key) + len(api_version_bytes) + len(correlational_id_bytes)
-		bytesLeftToRead := int(message_size_int) - bytesRead
+	api_key := binary.BigEndian.Uint16(request_api_key)
+	api_version := binary.BigEndian.Uint16(api_version_bytes)
+	correlational_id := binary.BigEndian.Uint32(correlational_id_bytes)
 
-		var requestBody []byte
-		if bytesLeftToRead > 0 {
-			requestBody, err = ReadBytes(conn, bytesLeftToRead)
-			if err != nil {
-				return err
-			}
-		}
+	fmt.Println(api_key)
+	fmt.Println(correlational_id)
 
-		api_key := binary.BigEndian.Uint16(request_api_key)
-		api_version := binary.BigEndian.Uint16(api_version_bytes)
-		correlational_id := binary.BigEndian.Uint32(correlational_id_bytes)
-
-		fmt.Println(api_key)
-		fmt.Println(correlational_id)
-
-
-		switch api_key {
-
-		case 18:
-			handleApiVersions(conn, api_version, correlational_id_bytes)
-		case 75:
-			handleDescribeTopicPartitions(conn, correlational_id_bytes, requestBody)
-		default:
-			fmt.Printf("Unsupported API Key: %d\n", api_key)
-		}
-		return nil
+	switch api_key {
+	case 18:
+		handleApiVersions(conn, api_version, correlational_id_bytes)
+	case 75:
+		handleDescribeTopicPartitions(conn, correlational_id_bytes, requestBody)
+	default:
+		fmt.Printf("Unsupported API Key: %d\n", api_key)
+	}
+	return nil
 }
 
 func handleApiVersions(conn net.Conn, api_version uint16, correlational_id_bytes []byte) {
@@ -169,10 +170,8 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	// Parse the v0 request body to get the topic name.
 	topicName := parseDescribreTopicPartitionsRequest(request_body)
 
-	// Build the full, flexible response body.
+	// Build the full, flexible response body that the tester expects.
 	var responseBody []byte
-
-	// THE CORRECT ORDER STARTS HERE
 
 	// 1. throttle_time_ms (INT32) must be FIRST.
 	throttleTimeBytes := make([]byte, 4)
@@ -180,13 +179,10 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	responseBody = append(responseBody, throttleTimeBytes...)
 
 	// 2. topics (COMPACT_ARRAY of Topic structs)
-	// We are returning one topic struct. Length is N+1 = 2.
-	topicsArrayLength := []byte{2}
+	topicsArrayLength := []byte{2} // Length is N+1, so 1 element is length 2.
 	responseBody = append(responseBody, topicsArrayLength...)
 
-	// The simplified Topic Struct that the v0-to-flexible tester expects:
-	// It doesn't have topic_id, is_internal, or authorized_operations.
-
+	// The full Topic Struct:
 	errorCodeBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(errorCodeBytes, 3) // UNKNOWN_TOPIC_OR_PARTITION
 	responseBody = append(responseBody, errorCodeBytes...)
@@ -194,13 +190,26 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	topicNameBytes := encodeCompactString(topicName) // Use COMPACT string for the response
 	responseBody = append(responseBody, topicNameBytes...)
 
-	partitionsArrayLength := []byte{1} // Empty partitions array (N+1=1)
+	topicIdBytes := make([]byte, 16) // Null UUID
+	responseBody = append(responseBody, topicIdBytes...)
+
+	responseBody = append(responseBody, byte(0)) // is_internal = false
+
+	partitionsArrayLength := []byte{1} // Empty partitions array
 	responseBody = append(responseBody, partitionsArrayLength...)
 
+	authorizedOpsBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(authorizedOpsBytes, 0) // No authorized operations
+	responseBody = append(responseBody, authorizedOpsBytes...)
+	
 	responseBody = append(responseBody, byte(0)) // Tagged fields for topic struct
 
-	// 3. next_cursor (struct) is not part of the v0 response schema that the tester is validating against.
-	// My previous advice to add it was incorrect based on the simpler error.
+	// 3. next_cursor (struct) is REQUIRED.
+	responseBody = append(responseBody, byte(0)) // topic_name is a NULL compact string
+
+	partitionIndexBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(partitionIndexBytes, 0xFFFFFFFF) // partition_index = -1
+	responseBody = append(responseBody, partitionIndexBytes...)
 
 	// 4. tagged_fields (for the whole response) is last.
 	responseBody = append(responseBody, byte(0))
