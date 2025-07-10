@@ -164,48 +164,60 @@ func handleApiVersions(conn net.Conn, api_version uint16, correlational_id_bytes
             conn.Write(responseBody)
 		}
 }
-
 func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte, request_body []byte) {
-	// Parse the DescribeTopicPartitions request body
+	// Parse the v0 request body to get the topic name.
 	topicName := parseDescribreTopicPartitionsRequest(request_body)
 
-	// Build the response
+	// Build the full, flexible response body.
 	var responseBody []byte
 
-	// The v0 Response Body starts with throttle_time_ms.
+	// 1. throttle_time_ms (INT32)
 	throttleTimeBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(throttleTimeBytes, 0)
 	responseBody = append(responseBody, throttleTimeBytes...)
 
-	// Followed by the topics array.
-	// topics array - compact array with 1 element, so length is 2 (N+1)
+	// 2. topics (COMPACT_ARRAY of Topic structs)
+	// Array has 1 element, so length is N+1=2.
 	topicsArrayLength := []byte{2}
 	responseBody = append(responseBody, topicsArrayLength...)
 
-	// The Topic struct entry for the unknown topic.
-	// error_code (2 bytes) - UNKNOWN_TOPIC_OR_PARTITION = 3
+	// The Topic Struct:
 	errorCodeBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(errorCodeBytes, 3)
+	binary.BigEndian.PutUint16(errorCodeBytes, 3) // UNKNOWN_TOPIC_OR_PARTITION
 	responseBody = append(responseBody, errorCodeBytes...)
 
-	// topic_name (compact string)
 	topicNameBytes := encodeCompactString(topicName)
 	responseBody = append(responseBody, topicNameBytes...)
 
-	// partitions array (within the topic struct) - empty compact array, so length is 1
-	partitionsArrayLength := []byte{1}
+	topicIdBytes := make([]byte, 16) // Null UUID
+	responseBody = append(responseBody, topicIdBytes...)
+
+	responseBody = append(responseBody, byte(0)) // is_internal = false
+
+	partitionsArrayLength := []byte{1} // Empty partitions array
 	responseBody = append(responseBody, partitionsArrayLength...)
 
-	// Note: The v0 schema does NOT have topic_id, is_internal, or topic_authorized_operations.
-	// It also does NOT have a top-level next_cursor.
-	// It ends right after the partitions array.
+	authorizedOpsBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(authorizedOpsBytes, 0) // No authorized operations
+	responseBody = append(responseBody, authorizedOpsBytes...)
+	
+	responseBody = append(responseBody, byte(0)) // Tagged fields for topic struct
 
-	// Calculate total message size: correlation_id (4) + responseBody
+	// 3. next_cursor (struct)
+	responseBody = append(responseBody, byte(0)) // topic_name is a NULL compact string
+
+	partitionIndexBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(partitionIndexBytes, 0xFFFFFFFF) // partition_index = -1
+	responseBody = append(responseBody, partitionIndexBytes...)
+
+	// 4. tagged_fields (for the whole response)
+	responseBody = append(responseBody, byte(0))
+
+	// Calculate final size and send the complete response.
 	totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
 	responseSizeBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
 
-	// Write the full response
 	conn.Write(responseSizeBytes)
 	conn.Write(correlational_id_bytes)
 	conn.Write(responseBody)
@@ -214,12 +226,30 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	offset := 0
 
-	topicsArrayLen, offset := readCompactArrayLength(requestBody, offset)
+	// The v0 request body is an ARRAY of STRINGs.
+	// An ARRAY starts with a 4-byte INT32 length.
+	if len(requestBody) < offset+4 {
+		return ""
+	}
+	topicsArrayLength := int(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
+	offset += 4
 
-	if topicsArrayLen > 0 {
-		topicName, _ := readCompactString(requestBody, offset)
+	if topicsArrayLength > 0 {
+		// A STRING starts with a 2-byte INT16 length.
+		if len(requestBody) < offset+2 {
+			return ""
+		}
+		topicNameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
+		offset += 2
+
+		// Read the topic name bytes.
+		if len(requestBody) < offset+topicNameLength {
+			return ""
+		}
+		topicName := string(requestBody[offset : offset+topicNameLength])
 		return topicName
 	}
+
 	return ""
 }
 
