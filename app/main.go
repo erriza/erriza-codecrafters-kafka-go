@@ -166,22 +166,23 @@ func handleApiVersions(conn net.Conn, api_version uint16, correlational_id_bytes
 }
 
 func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte, request_body []byte) {
-	//Parse the DescribeTopicPartititions request body
+	// Parse the DescribeTopicPartitions request body
 	topicName := parseDescribreTopicPartitionsRequest(request_body)
 
 	// Build the response
 	var responseBody []byte
-	
-	// throttle_time_ms (4 bytes) - set to 0
+
+	// The v0 Response Body starts with throttle_time_ms.
 	throttleTimeBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(throttleTimeBytes, 0)
 	responseBody = append(responseBody, throttleTimeBytes...)
 
-	// topics array - compact array with 1 element, so length is 2
-	topicArrayLength := []byte{2}
-	responseBody = append(responseBody, topicArrayLength...)
+	// Followed by the topics array.
+	// topics array - compact array with 1 element, so length is 2 (N+1)
+	topicsArrayLength := []byte{2}
+	responseBody = append(responseBody, topicsArrayLength...)
 
-	// Topic entry 
+	// The Topic struct entry for the unknown topic.
 	// error_code (2 bytes) - UNKNOWN_TOPIC_OR_PARTITION = 3
 	errorCodeBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(errorCodeBytes, 3)
@@ -190,41 +191,21 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	// topic_name (compact string)
 	topicNameBytes := encodeCompactString(topicName)
 	responseBody = append(responseBody, topicNameBytes...)
-	
-	// topic_id (16 bytes) - 00000000-0000-0000-0000-000000000000
-	topicIdBytes := make([]byte, 16)
-	responseBody = append(responseBody, topicIdBytes...)
-	
-	// is_internal (1 byte) - false
-	responseBody = append(responseBody, byte(0))
-	
-	// partitions array - empty compact array, so length is 1
+
+	// partitions array (within the topic struct) - empty compact array, so length is 1
 	partitionsArrayLength := []byte{1}
 	responseBody = append(responseBody, partitionsArrayLength...)
-	
-	// topic_authorized_operations (4 bytes) - -2147483648 (not supported)
-	authorizedOpsBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(authorizedOpsBytes, 0x80000000) // -2147483648
-	responseBody = append(responseBody, authorizedOpsBytes...)
-	
-	// tagged fields for topic (empty)
-	responseBody = append(responseBody, byte(0))
 
-	nextCursorTopicName := []byte{0} // NULL string
-	responseBody = append(responseBody, nextCursorTopicName...)
+	// Note: The v0 schema does NOT have topic_id, is_internal, or topic_authorized_operations.
+	// It also does NOT have a top-level next_cursor.
+	// It ends right after the partitions array.
 
-	nextCursorBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(nextCursorBytes, 0xFFFFFFFF) // -1
-	responseBody = append(responseBody, nextCursorBytes...)
-
-	// tagged fields for response (empty)
-	responseBody = append(responseBody, byte(0))
-	
 	// Calculate total message size: correlation_id (4) + responseBody
 	totalResponseSize := int32(len(correlational_id_bytes) + len(responseBody))
 	responseSizeBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(responseSizeBytes, uint32(totalResponseSize))
 
+	// Write the full response
 	conn.Write(responseSizeBytes)
 	conn.Write(correlational_id_bytes)
 	conn.Write(responseBody)
