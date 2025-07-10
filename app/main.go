@@ -164,6 +164,7 @@ func handleApiVersions(conn net.Conn, api_version uint16, correlational_id_bytes
             conn.Write(responseBody)
 		}
 }
+
 func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte, request_body []byte) {
 	// Parse the v0 request body to get the topic name.
 	topicName := parseDescribreTopicPartitionsRequest(request_body)
