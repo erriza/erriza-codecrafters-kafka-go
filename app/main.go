@@ -47,31 +47,29 @@ func handleReq(conn net.Conn) error {
 
 	//Read the header field sequentially. Each call to readBytes
 		message_size, err := ReadBytes(conn, 4)
-		if err != nil { fmt.Println(err) }
+		if err != nil { return err }
 
 		request_api_key, err := ReadBytes(conn, 2)
-		if err != nil { fmt.Println(err) }
+		if err != nil { return err }
 
 		api_version_bytes, err := ReadBytes(conn, 2)
-		if err != nil { fmt.Println(err) }
+		if err != nil { return err }
 
 		correlational_id_bytes, err := ReadBytes(conn, 4)
 		if err != nil {  
-			fmt.Println(err)
+			return err
 		}
 
 		//convert to int the size of message
 		message_size_int := binary.BigEndian.Uint32(message_size)
-
 		bytesRead := len(request_api_key) + len(api_version_bytes) + len(correlational_id_bytes)
-
 		bytesLeftToRead := int(message_size_int) - bytesRead
 
 		var requestBody []byte
 		if bytesLeftToRead > 0 {
 			requestBody, err = ReadBytes(conn, bytesLeftToRead)
 			if err != nil {
-				fmt.Println(err)
+				return err
 			}
 		}
 
@@ -173,12 +171,7 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 
 	// Build the response
 	var responseBody []byte
-
-	// throttle_time_ms (4 bytes) - set to 0
-	throttleTimeBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(throttleTimeBytes, 0)
-	responseBody = append(responseBody, throttleTimeBytes...)
-
+	
 	// topics array - compact array with 1 element, so length is 2
 	topicArrayLength := []byte{2}
 	responseBody = append(responseBody, topicArrayLength...)
@@ -212,9 +205,14 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	// tagged fields for topic (empty)
 	responseBody = append(responseBody, byte(0))
 
-	nextCursorBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(nextCursorBytes, 0xFFFFFFFF) // -1
-	responseBody = append(responseBody, nextCursorBytes...)
+	// throttle_time_ms (4 bytes) - set to 0
+	throttleTimeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(throttleTimeBytes, 0)
+	responseBody = append(responseBody, throttleTimeBytes...)
+
+	// nextCursorBytes := make([]byte, 4)
+	// binary.BigEndian.PutUint32(nextCursorBytes, 0xFFFFFFFF) // -1
+	// responseBody = append(responseBody, nextCursorBytes...)
 
 	// tagged fields for response (empty)
 	responseBody = append(responseBody, byte(0))
