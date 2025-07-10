@@ -235,32 +235,42 @@ func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	fmt.Printf("Request body length: %d\n", len(requestBody))
 
 	// For DescribeTopicPartitions v0, the request body format is:
-	// 1. topics (ARRAY of STRING) - 4 bytes length + strings
+	// 1. topics (COMPACT_ARRAY of COMPACT_STRING) - VARINT length + compact strings
 	// 2. response_partition_limit (INT32) 
 	// 3. cursor (nullable)
 
-	// First, read the topics array length (regular ARRAY, not compact)
-	if len(requestBody) < offset+4 {
+	// First, read the topics array length (COMPACT_ARRAY uses VARINT)
+	if len(requestBody) < offset+1 {
 		fmt.Printf("Not enough bytes for array length\n")
 		return ""
 	}
 	
-	// Read the array length (4 bytes, big endian)
-	topicsArrayLength := int(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
+	// Read the array length using VARINT (for compact arrays, length is N+1)
+	topicsArrayLengthRaw, bytesRead := binary.Uvarint(requestBody[offset:])
+	if bytesRead <= 0 {
+		fmt.Printf("Error reading VARINT for array length\n")
+		return ""
+	}
+	topicsArrayLength := int(topicsArrayLengthRaw) - 1 // Subtract 1 for compact array
 	fmt.Printf("Topics array length: %d\n", topicsArrayLength)
-	offset += 4
+	offset += bytesRead
 	
 	if topicsArrayLength > 0 {
-		// Read the first topic name (regular STRING, not compact)
-		if len(requestBody) < offset+2 {
+		// Read the first topic name (COMPACT_STRING)
+		if len(requestBody) < offset+1 {
 			fmt.Printf("Not enough bytes for string length\n")
 			return ""
 		}
 		
-		// Read the string length (2 bytes, big endian)
-		topicNameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
+		// Read the string length using VARINT (for compact strings, length is N+1)
+		topicNameLengthRaw, bytesRead := binary.Uvarint(requestBody[offset:])
+		if bytesRead <= 0 {
+			fmt.Printf("Error reading VARINT for string length\n")
+			return ""
+		}
+		topicNameLength := int(topicNameLengthRaw) - 1 // Subtract 1 for compact string
 		fmt.Printf("Topic name length: %d\n", topicNameLength)
-		offset += 2
+		offset += bytesRead
 		
 		if topicNameLength > 0 && len(requestBody) >= offset+topicNameLength {
 			topicName := string(requestBody[offset : offset+topicNameLength])
