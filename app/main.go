@@ -169,7 +169,7 @@ func handleApiVersions(conn net.Conn, api_version uint16, correlational_id_bytes
 
 func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte, request_body []byte) {
 	//Parse the DescribeTopicPartititions request body
-	topicName := parseDescribteTopicPartitionsRequest(request_body)
+	topicName := parseDescribreTopicPartitionsRequest(request_body)
 
 	// Build the response
 	var responseBody []byte
@@ -229,64 +229,15 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	conn.Write(responseBody)
 }
 
-func parseDescribteTopicPartitionsRequest(requestBody []byte) string {
-	fmt.Printf("Request body length: %d\n", len(requestBody))
-	if len(requestBody) == 0 {
-		return ""
-	}
-	
+func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	offset := 0
 
-	// Skip client_id (compact string - nullable)
-	if len(requestBody) > offset {
-		clientIdLength := int(requestBody[offset]) - 1  // compact string length
-		offset += 1
-		fmt.Printf("Client ID length: %d\n", clientIdLength)
-		
-		if clientIdLength > 0 {
-			offset += clientIdLength
-		}
-	}
+	topicsArrayLen, offset := readCompactArrayLength(requestBody, offset)
 
-	// skip max_response_bytes (4 bytes)
-	if len(requestBody) > offset+3 {
-		offset += 4
-		fmt.Printf("After max_response_bytes, offset: %d\n", offset)
+	if topicsArrayLen > 0 {
+		topicName, _ := readCompactString(requestBody, offset)
+		return topicName
 	}
-
-	// skip cursor (nullable - compact string)
-	if len(requestBody) > offset {
-		cursorLength := int(requestBody[offset]) - 1  // compact string length
-		offset += 1
-		fmt.Printf("Cursor length: %d\n", cursorLength)
-		
-		if cursorLength > 0 {
-			offset += cursorLength
-		}
-	}
-
-	// Read topics array length (compact array)
-	if len(requestBody) > offset {
-		topicsArrayLength := int(requestBody[offset]) - 1
-		offset += 1
-		fmt.Printf("Topics array length: %d\n", topicsArrayLength)
-		
-		if topicsArrayLength > 0 {
-			// Read first topic name (compact string)
-			if len(requestBody) > offset {
-				topicNameLength := int(requestBody[offset]) - 1
-				offset += 1
-				fmt.Printf("Topic name length: %d\n", topicNameLength)
-				
-				if topicNameLength > 0 && len(requestBody) >= offset+topicNameLength {
-					topicName := string(requestBody[offset:offset+topicNameLength])
-					fmt.Printf("Topic name: %s\n", topicName)
-					return topicName
-				}
-			}
-		}
-	}
-	
 	return ""
 }
 
@@ -312,4 +263,25 @@ func ReadBytes(conn net.Conn, bytesToRead int) ([]byte, error) {
 		return nil, err
 	}
 	return buff, nil
+}
+
+func readCompactString(buffer []byte, offset int) (string, int) {
+	length, bytesRead := binary.Uvarint(buffer[offset:])
+	offset+= bytesRead
+
+	strLen := int(length-1)
+	if strLen <= 0 {
+		return "", offset
+	}
+
+	end := offset + strLen
+	str := string(buffer[offset:end])
+	return str, end
+}
+
+func readCompactArrayLength(buffer []byte, offset int)(int, int) {
+	length, bytesRead := binary.Uvarint(buffer[offset:])
+	offset+= bytesRead
+
+	return int(length-1), offset
 }
