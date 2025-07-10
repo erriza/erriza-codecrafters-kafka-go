@@ -196,7 +196,7 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	responseBody = append(responseBody, topicNameBytes...)
 
 	// topic_id (UUID) - 16 bytes, all zeros for unknown topic
-	topicIdBytes := make([]byte, 16) // Null UUID
+	topicIdBytes := make([]byte, 16) // Null UUID (all zeros)
 	responseBody = append(responseBody, topicIdBytes...)
 
 	// is_internal (BOOLEAN)
@@ -213,7 +213,8 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	responseBody = append(responseBody, authorizedOpsBytes...)
 
 	// 3. next_cursor (nullable struct) - NULL for v0
-	responseBody = append(responseBody, byte(0xFF)) // -1 indicates NULL
+	// In Kafka protocol, nullable structs use byte 0x00 for NULL
+	responseBody = append(responseBody, byte(0x00)) // NULL cursor
 
 	fmt.Printf("Response body length: %d\n", len(responseBody))
 	
@@ -229,6 +230,9 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 
 func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	offset := 0
+	
+	fmt.Printf("Request body hex: %x\n", requestBody)
+	fmt.Printf("Request body length: %d\n", len(requestBody))
 
 	// For DescribeTopicPartitions v0, the request body format is:
 	// 1. topics (ARRAY of STRING) - 4 bytes length + strings
@@ -237,25 +241,30 @@ func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 
 	// First, read the topics array length (regular ARRAY, not compact)
 	if len(requestBody) < offset+4 {
+		fmt.Printf("Not enough bytes for array length\n")
 		return ""
 	}
 	
 	// Read the array length (4 bytes, big endian)
 	topicsArrayLength := int(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
+	fmt.Printf("Topics array length: %d\n", topicsArrayLength)
 	offset += 4
 	
 	if topicsArrayLength > 0 {
 		// Read the first topic name (regular STRING, not compact)
 		if len(requestBody) < offset+2 {
+			fmt.Printf("Not enough bytes for string length\n")
 			return ""
 		}
 		
 		// Read the string length (2 bytes, big endian)
 		topicNameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
+		fmt.Printf("Topic name length: %d\n", topicNameLength)
 		offset += 2
 		
 		if topicNameLength > 0 && len(requestBody) >= offset+topicNameLength {
 			topicName := string(requestBody[offset : offset+topicNameLength])
+			fmt.Printf("Topic name: '%s'\n", topicName)
 			return topicName
 		}
 	}
