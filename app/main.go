@@ -226,28 +226,41 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 func parseDescribreTopicPartitionsRequest(requestBody []byte) string {
 	offset := 0
 
-	// The v0 request body is an ARRAY of STRINGs.
-	// An ARRAY starts with a 4-byte INT32 length.
-	if len(requestBody) < offset+4 {
+	// For DescribeTopicPartitions v0, the request body starts with:
+	// 1. topics (COMPACT_ARRAY of COMPACT_STRING)
+	// 2. response_partition_limit (INT32)
+	// 3. cursor (nullable)
+	// 4. tagged_fields
+
+	// First, read the topics array length (COMPACT_ARRAY)
+	if len(requestBody) < offset+1 {
 		return ""
 	}
-	topicsArrayLength := int(binary.BigEndian.Uint32(requestBody[offset : offset+4]))
-	offset += 4
-
-	if topicsArrayLength > 0 {
-		// A STRING starts with a 2-byte INT16 length.
-		if len(requestBody) < offset+2 {
+	
+	// Read the varint length for the compact array
+	topicsArrayLength, bytesRead := binary.Uvarint(requestBody[offset:])
+	offset += bytesRead
+	
+	// Length is N+1 for compact arrays, so actual length is topicsArrayLength-1
+	actualTopicsLength := int(topicsArrayLength - 1)
+	
+	if actualTopicsLength > 0 {
+		// Read the first topic name (COMPACT_STRING)
+		if len(requestBody) < offset+1 {
 			return ""
 		}
-		topicNameLength := int(binary.BigEndian.Uint16(requestBody[offset : offset+2]))
-		offset += 2
-
-		// Read the topic name bytes.
-		if len(requestBody) < offset+topicNameLength {
-			return ""
+		
+		// Read the compact string length
+		topicNameLength, bytesRead := binary.Uvarint(requestBody[offset:])
+		offset += bytesRead
+		
+		// Length is N+1 for compact strings, so actual length is topicNameLength-1
+		actualTopicNameLength := int(topicNameLength - 1)
+		
+		if actualTopicNameLength > 0 && len(requestBody) >= offset+actualTopicNameLength {
+			topicName := string(requestBody[offset : offset+actualTopicNameLength])
+			return topicName
 		}
-		topicName := string(requestBody[offset : offset+topicNameLength])
-		return topicName
 	}
 
 	return ""
