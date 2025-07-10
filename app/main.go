@@ -172,6 +172,11 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	// Build the response
 	var responseBody []byte
 	
+	// throttle_time_ms (4 bytes) - set to 0
+	throttleTimeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(throttleTimeBytes, 0)
+	responseBody = append(responseBody, throttleTimeBytes...)
+
 	// topics array - compact array with 1 element, so length is 2
 	topicArrayLength := []byte{2}
 	responseBody = append(responseBody, topicArrayLength...)
@@ -205,14 +210,12 @@ func handleDescribeTopicPartitions(conn net.Conn, correlational_id_bytes []byte,
 	// tagged fields for topic (empty)
 	responseBody = append(responseBody, byte(0))
 
-	// throttle_time_ms (4 bytes) - set to 0
-	throttleTimeBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(throttleTimeBytes, 0)
-	responseBody = append(responseBody, throttleTimeBytes...)
+	nextCursorTopicName := []byte{0} // NULL string
+	responseBody = append(responseBody, nextCursorTopicName...)
 
-	// nextCursorBytes := make([]byte, 4)
-	// binary.BigEndian.PutUint32(nextCursorBytes, 0xFFFFFFFF) // -1
-	// responseBody = append(responseBody, nextCursorBytes...)
+	nextCursorBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(nextCursorBytes, 0xFFFFFFFF) // -1
+	responseBody = append(responseBody, nextCursorBytes...)
 
 	// tagged fields for response (empty)
 	responseBody = append(responseBody, byte(0))
